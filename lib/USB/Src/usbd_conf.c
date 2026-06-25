@@ -3,6 +3,8 @@
 #include "stm32f4xx.h"
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_def.h"
+#include "stm32f4xx_hal_gpio.h"
+#include "usbd_cdc_cb.h"
 #include "usbd_core.h"
 #include "usbd_def.h"
 
@@ -39,7 +41,12 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *pcdHandle) {
     HAL_GPIO_Init(GPIO_PORT_USB_DP, &gpio_conf);
 
     gpio_conf.Pin = GPIO_PIN_USB_ID;
+    gpio_conf.Mode = GPIO_MODE_AF_OD;
     HAL_GPIO_Init(GPIO_PORT_USB_ID, &gpio_conf);
+
+    gpio_conf.Pin = GPIO_PIN_USB_VBUS;
+    gpio_conf.Mode = GPIO_MODE_INPUT;
+    HAL_GPIO_Init(GPIO_PORT_USB_VBUS, &gpio_conf);
 
     // Interrupts are enabled only after USBD Handle is initialized to make sure
     // pData is not NULL
@@ -231,6 +238,7 @@ void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   USBD_LL_DevConnected((USBD_HandleTypeDef *)hpcd->pData);
+  CDC_CB_Connected();
 }
 
 /**
@@ -245,6 +253,7 @@ void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   USBD_LL_DevDisconnected((USBD_HandleTypeDef *)hpcd->pData);
+  CDC_CB_Disconnected();
 }
 
 /*******************************************************************************

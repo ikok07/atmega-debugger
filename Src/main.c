@@ -25,15 +25,6 @@ int main() {
   }
 
   while (1) {
-    HAL_Delay(3000);
-    char *str = "Hello World!";
-    if ((usb_err = CDC_Transmit_FS((uint8_t *)str, strlen(str))) != USBD_OK) {
-      (void)usb_err;
-    };
+    HAL_Delay(100);
   }
-}
-
-void CDC_DataReceived_CB(uint8_t *Buf, uint32_t *Len) {
-  uint8_t test = 1;
-  (void)test;
 }

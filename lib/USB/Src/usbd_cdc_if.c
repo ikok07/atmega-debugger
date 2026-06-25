@@ -1,6 +1,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "usbd_cdc_if.h"
 #include "app_state.h"
+#include "usbd_cdc_cb.h"
 
 /** Received data over USB are stored in this buffer      */
 uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
@@ -9,7 +10,7 @@ uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* Link to firmware global state handle */
-USBD_HandleTypeDef *hUsbDeviceFS = &gAppState.husbd;
+USBD_HandleTypeDef *hUsbDeviceFS = &gAppState.husb.husbd;
 
 static int8_t CDC_Init_FS(void);
 static int8_t CDC_DeInit_FS(void);
@@ -128,7 +129,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t *pbuf, uint16_t length) {
 static int8_t CDC_Receive_FS(uint8_t *Buf, uint32_t *Len) {
   USBD_CDC_SetRxBuffer(hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(hUsbDeviceFS);
-  CDC_DataReceived_CB(Buf, Len);
+  CDC_CB_DataReceived(Buf, Len);
   return (USBD_OK);
 }
 
@@ -175,5 +176,6 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum) {
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
+  CDC_CB_DataTxCplt(Buf, Len);
   return result;
 }
