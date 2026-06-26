@@ -1,5 +1,6 @@
 #include "app_state.h"
 #include "power.h"
+#include "spi.h"
 #include "stm32f401xc.h"
 #include "stm32f4xx_hal.h"
 #include "usb.h"
@@ -21,6 +22,11 @@ int main() {
   }
 
   if ((usb_err = USB_Init()) != USBD_OK) {
+    while (1)
+      ;
+  }
+
+  if ((hal_err = SPI_Init()) != HAL_OK) {
     while (1)
       ;
   }

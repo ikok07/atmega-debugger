@@ -42,6 +42,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 file(GLOB APP_SOURCES
     "startup_stm32f401xc.s"
     "./Src/*.c"
+    "./Src/msp/*.c"
     "lib/HAL/Src/*.c"
     "lib/USB/Src/*.c"
     "lib/ring_buffer/Src/*.c"

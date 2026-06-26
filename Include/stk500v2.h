@@ -9,12 +9,13 @@
 #define MAX_COMMAND_SIZE                (MAX_BODY_SIZE + 6)
 #define DEBUGGER_SIGNATURE              "AVRISP_2"
 #define HW_VERSION                      0x01
-#define SW_MAJOR_VERSION                0x01
+#define SW_MAJOR_VERSION                0x00
 #define SW_MINOR_VERSION                0x01
 #define VOLTAGE_TARGET                  50                  // Hard-coded 5V for now
 
 #define STK500V2_START_BYTE             (0x1B)
 #define STK500V2_TOKEN                  (0x0E)
+#define STK500V2_XTAL                   (7372800U)
 
 /* ── General commands ───────────────────────────────────────────────────── */
 #define CMD_SIGN_ON                     (0x01)

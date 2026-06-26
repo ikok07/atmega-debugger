@@ -1,8 +1,9 @@
 #include "stk500v2.h"
 #include "ringbuf.h"
+#include "spi.h"
+#include "stm32f4xx_hal_def.h"
 #include "usb.h"
 #include "usbd_def.h"
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -17,8 +18,11 @@ static uint8_t validate_checksum(uint8_t *Buffer, uint16_t Len);
 static uint8_t get_parameter_value(uint8_t ParamID);
 static uint8_t set_parameter_value(uint8_t ParamID, uint8_t Value);
 
+static uint8_t get_sck_period_value_from_freq(uint32_t Frequency);
+static uint32_t get_freq_from_sck_period_value(uint8_t Value);
+
 static uint8_t gCommandBuffer[MIN_COMMAND_SIZE];
-static uint8_t gCurrentSckDuration = 0x00;
+static uint8_t gCurrentSckDuration = 0xFF;
 
 STK500V2_ParamPairTypeDef Stk500V2_StaticParams[PARAMS_COUNT] = {
     {.ParamID = PARAM_HW_VER, .Value = HW_VERSION},
@@ -171,6 +175,10 @@ uint8_t get_parameter_value(uint8_t ParamID) {
       }
     }
   } else if (ParamID == PARAM_SCK_DURATION) {
+    if (gCurrentSckDuration == 0xFF) {
+      gCurrentSckDuration =
+          get_sck_period_value_from_freq(SPI1_DEFAULT_TARGET_FREQUENCY_HZ);
+    }
     return gCurrentSckDuration;
   }
 
@@ -178,12 +186,56 @@ uint8_t get_parameter_value(uint8_t ParamID) {
 }
 
 uint8_t set_parameter_value(uint8_t ParamID, uint8_t Value) {
+  HAL_StatusTypeDef hal_err;
   if (ParamID == PARAM_SCK_DURATION) {
     gCurrentSckDuration = Value;
 
-    // TODO: Configure SPI with the target frequency
+    if ((hal_err = SPI_SetFrequency(get_freq_from_sck_period_value(Value))) !=
+        HAL_OK) {
+      return 1;
+    };
     return 0;
   }
 
   return 0; // Ok if parameter is not supported
+}
+
+uint8_t get_sck_period_value_from_freq(uint32_t Frequency) {
+  // Algorithm directly inferred from avrdude's source code (stk500v2.c,
+  // stk500v2_set_sck_period)
+
+  uint32_t value;
+
+  if (Frequency >= STK500V2_XTAL / 4.0f) {
+    value = 0;
+  } else if (Frequency >= STK500V2_XTAL / 16.0f) {
+    value = 1;
+  } else if (Frequency >= STK500V2_XTAL / 64.0f) {
+    value = 2;
+  } else if (Frequency >= STK500V2_XTAL / 128.0f) {
+    value = 3;
+  } else {
+    // Rearange of this equation (
+    // (unsigned int) ceil(1/(24*f/(double) my.xtal) - 10.0/12.0)
+    // ) to make it integer only:
+    value = (1843200 + Frequency - 1) / (6 * Frequency);
+  }
+
+  if (value >= 255)
+    return 254;
+
+  return value;
+}
+uint32_t get_freq_from_sck_period_value(uint8_t Value) {
+  if (Value == 0) {
+    return STK500V2_XTAL / 4.0f;
+  } else if (Value == 1) {
+    return STK500V2_XTAL / 16.0f;
+  } else if (Value == 2) {
+    return STK500V2_XTAL / 64.0f;
+  } else if (Value == 3) {
+    return STK500V2_XTAL / 128.0f;
+  } else {
+    return (1843200 + (3 * Value) + 2) / ((6 * Value) + 5);
+  }
 }
