@@ -1,13 +1,23 @@
 #include "stk500v2.h"
+#include "app_state.h"
+#include "gpio_defs.h"
 #include "ringbuf.h"
 #include "spi.h"
+#include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_def.h"
+#include "stm32f4xx_hal_gpio.h"
+#include "stm32f4xx_hal_spi.h"
 #include "usb.h"
 #include "usbd_def.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
+/* ------ Command handlers ------ */
+static uint8_t enter_prog_mode(STK500V2_CommandTypeDef *Stk500Command);
+static void leave_prog_mode(STK500V2_CommandTypeDef *Stk500Command);
+
+/* ------ Utilities ------ */
 static USB_CommandStatusTypeDef
 send_response(STK500V2_CommandTypeDef *Stk500Command, uint8_t Status,
               uint8_t *Data, size_t Len);
@@ -20,6 +30,9 @@ static uint8_t set_parameter_value(uint8_t ParamID, uint8_t Value);
 
 static uint8_t get_sck_period_value_from_freq(uint32_t Frequency);
 static uint32_t get_freq_from_sck_period_value(uint8_t Value);
+
+static void avr_enable_reset();
+static void avr_disable_reset();
 
 static uint8_t gCommandBuffer[MIN_COMMAND_SIZE];
 static uint8_t gCurrentSckDuration = 0xFF;
@@ -37,6 +50,9 @@ STK500V2_HandleCmd(STK500V2_CommandTypeDef *Stk500Command) {
 
   uint8_t cmd_id = Stk500Command->MessageBody[0];
   if (cmd_id == CMD_SIGN_ON) {
+
+    // Make sure MCU is not in programming mode
+    avr_disable_reset();
 
     uint8_t data[9];
     data[0] = strlen(DEBUGGER_SIGNATURE);
@@ -56,6 +72,15 @@ STK500V2_HandleCmd(STK500V2_CommandTypeDef *Stk500Command) {
     uint8_t rc = set_parameter_value(param_id, param_value);
     status = send_response(Stk500Command,
                            rc > 0 ? STATUS_CMD_FAILED : STATUS_CMD_OK, NULL, 0);
+  } else if (cmd_id == CMD_ENTER_PROGMODE_ISP) {
+    uint8_t rc = enter_prog_mode(Stk500Command);
+    uint8_t resp_status = rc > 0 ? STATUS_CMD_FAILED : STATUS_CMD_OK;
+    if (rc == 2)
+      resp_status = STATUS_CMD_TOUT;
+    status = send_response(Stk500Command, resp_status, NULL, 0);
+  } else if (cmd_id == CMD_LEAVE_PROGMODE_ISP) {
+    leave_prog_mode(Stk500Command);
+    status = send_response(Stk500Command, STATUS_CMD_OK, NULL, 0);
   }
 
   return status;
@@ -114,6 +139,59 @@ STK500V2_ParseCmd(ringbuf_t RingBuffer,
   memcpy(Stk500Command, &cmd, sizeof(cmd));
 
   return USB_COMMAND_OK;
+}
+
+uint8_t enter_prog_mode(STK500V2_CommandTypeDef *Stk500Command) {
+  STK500V2_EnterProgModeBodyTypeDef body;
+  memcpy(&body, Stk500Command->MessageBody,
+         sizeof(STK500V2_EnterProgModeBodyTypeDef));
+
+  // Enable SPI GPIOs
+  SPI_EnableIO();
+
+  // Enter programming mode by pulling RESET to low
+  avr_enable_reset();
+
+  // Stabilization delay
+  HAL_Delay(body.StabDelay);
+
+  // Pull down RESET to activate programming mode
+  HAL_GPIO_WritePin(GPIO_PORT_AVR_RESET, GPIO_PIN_AVR_RESET, GPIO_PIN_RESET);
+  HAL_Delay(body.CmdExecutionDelay);
+
+  // Send commands
+  uint8_t rx_buf[4];
+  HAL_StatusTypeDef hal_err;
+  uint8_t success = 0;
+  for (uint8_t i = 0; i < body.SyncLoops; i++) {
+    if ((hal_err =
+             HAL_SPI_TransmitReceive(&gAppState.hspi1, body.Commands, rx_buf,
+                                     sizeof(body.Commands), 100)) != HAL_OK) {
+      SPI_DisableIO();
+      return hal_err == HAL_TIMEOUT ? 2 : 1;
+    };
+    if (rx_buf[body.PollIndex] == body.PollValue) {
+      success = 1;
+      break;
+    }
+  }
+
+  if (!success)
+    return 1;
+
+  return 0;
+}
+
+void leave_prog_mode(STK500V2_CommandTypeDef *Stk500Command) {
+  uint8_t pre_delay = Stk500Command->MessageBody[1];
+  uint8_t post_delay = Stk500Command->MessageBody[2];
+
+  HAL_Delay(pre_delay);
+
+  avr_disable_reset();
+  SPI_DisableIO();
+
+  HAL_Delay(post_delay);
 }
 
 USB_CommandStatusTypeDef send_response(STK500V2_CommandTypeDef *Stk500Command,
@@ -238,4 +316,26 @@ uint32_t get_freq_from_sck_period_value(uint8_t Value) {
   } else {
     return (1843200 + (3 * Value) + 2) / ((6 * Value) + 5);
   }
+}
+
+void avr_enable_reset() {
+  GPIO_InitTypeDef gpio_conf = {
+      .Mode = GPIO_MODE_OUTPUT_PP,
+      .Pin = GPIO_PIN_AVR_RESET,
+      .Pull = GPIO_NOPULL,
+      .Speed = GPIO_SPEED_FREQ_LOW,
+  };
+  HAL_GPIO_Init(GPIO_PORT_AVR_RESET, &gpio_conf);
+  HAL_GPIO_WritePin(GPIO_PORT_AVR_RESET, GPIO_PIN_AVR_RESET, GPIO_PIN_SET);
+}
+
+void avr_disable_reset() {
+  GPIO_InitTypeDef gpio_conf = {
+      .Mode = GPIO_MODE_INPUT,
+      .Pin = GPIO_PIN_AVR_RESET,
+      .Pull = GPIO_PULLUP,
+      .Speed = GPIO_SPEED_FREQ_LOW,
+  };
+  // Reset into input mode pull-up
+  HAL_GPIO_Init(GPIO_PORT_AVR_RESET, &gpio_conf);
 }

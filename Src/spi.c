@@ -3,6 +3,7 @@
 #include "gpio_defs.h"
 #include "stm32f4xx_hal_def.h"
 #include "stm32f4xx_hal_gpio.h"
+#include "stm32f4xx_hal_gpio_ex.h"
 #include "stm32f4xx_hal_rcc.h"
 #include "stm32f4xx_hal_spi.h"
 #include <limits.h>
@@ -16,7 +17,8 @@ typedef struct {
 
 HAL_StatusTypeDef SPI_Init() {
   HAL_StatusTypeDef hal_err;
-  gAppState.hspi1 = (SPI_HandleTypeDef){.Init = {
+  gAppState.hspi1 = (SPI_HandleTypeDef){.Instance = SPI1,
+                                        .Init = {
                                             .Mode = SPI_MODE_MASTER,
                                             .CLKPhase = SPI_PHASE_1EDGE,
                                             .CLKPolarity = SPI_POLARITY_LOW,
@@ -84,14 +86,11 @@ HAL_StatusTypeDef SPI_SetFrequency(uint32_t FrequencyHz) {
 }
 
 void SPI_EnableIO() {
-  GPIO_InitTypeDef gpio_conf = {.Mode = GPIO_MODE_OUTPUT_PP,
+  GPIO_InitTypeDef gpio_conf = {.Mode = GPIO_MODE_AF_PP,
                                 .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
                                 .Pull = GPIO_NOPULL,
-                                .Pin = GPIO_PIN_AVR_RESET};
+                                .Alternate = GPIO_AF5_SPI1};
 
-  HAL_GPIO_Init(GPIO_PORT_AVR_RESET, &gpio_conf);
-
-  gpio_conf.Mode = GPIO_MODE_AF_PP;
   gpio_conf.Pin = GPIO_PIN_SPI_SCK;
   HAL_GPIO_Init(GPIO_PORT_SPI_SCK, &gpio_conf);
 
@@ -108,9 +107,6 @@ void SPI_DisableIO() {
                                 .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
                                 .Pull = GPIO_PULLUP,
                                 .Pin = GPIO_PIN_AVR_RESET};
-
-  // Reset into input mode pull-up
-  HAL_GPIO_Init(GPIO_PORT_AVR_RESET, &gpio_conf);
 
   // MISO into input mode pull-up
   gpio_conf.Pin = GPIO_PIN_SPI_MISO;

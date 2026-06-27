@@ -3,6 +3,7 @@
 
 #include "usb.h"
 #include <stdint.h>
+#include <sys/cdefs.h>
 
 #define MAX_BODY_SIZE                   (275)
 #define MIN_COMMAND_SIZE                (5)
@@ -39,37 +40,6 @@
 #define CMD_READ_SIGNATURE_ISP          (0x1B)
 #define CMD_READ_OSCCAL_ISP             (0x1C)
 #define CMD_SPI_MULTI                   (0x1D)
-
-/* ── PP (parallel programming) commands ─────────────────────────────────── */
-#define CMD_ENTER_PROGMODE_PP           (0x20)
-#define CMD_LEAVE_PROGMODE_PP           (0x21)
-#define CMD_CHIP_ERASE_PP               (0x22)
-#define CMD_PROGRAM_FLASH_PP            (0x23)
-#define CMD_READ_FLASH_PP               (0x24)
-#define CMD_PROGRAM_EEPROM_PP           (0x25)
-#define CMD_READ_EEPROM_PP              (0x26)
-#define CMD_PROGRAM_FUSE_PP             (0x27)
-#define CMD_READ_FUSE_PP                (0x28)
-#define CMD_PROGRAM_LOCK_PP             (0x29)
-#define CMD_READ_LOCK_PP                (0x2A)
-#define CMD_READ_SIGNATURE_PP           (0x2B)
-#define CMD_READ_OSCCAL_PP              (0x2C)
-#define CMD_SET_CONTROL_STACK           (0x2D)
-
-/* ── HVSP (high-voltage serial programming) commands ────────────────────── */
-#define CMD_ENTER_PROGMODE_HVSP         (0x30)
-#define CMD_LEAVE_PROGMODE_HVSP         (0x31)
-#define CMD_CHIP_ERASE_HVSP             (0x32)
-#define CMD_PROGRAM_FLASH_HVSP          (0x33)
-#define CMD_READ_FLASH_HVSP             (0x34)
-#define CMD_PROGRAM_EEPROM_HVSP         (0x35)
-#define CMD_READ_EEPROM_HVSP            (0x36)
-#define CMD_PROGRAM_FUSE_HVSP           (0x37)
-#define CMD_READ_FUSE_HVSP              (0x38)
-#define CMD_PROGRAM_LOCK_HVSP           (0x39)
-#define CMD_READ_LOCK_HVSP              (0x3A)
-#define CMD_READ_SIGNATURE_HVSP         (0x3B)
-#define CMD_READ_OSCCAL_HVSP            (0x3C)
 
 /* ── Status codes ───────────────────────────────────────────────────────── */
 /* General response status (body byte 1 of every reply) */
@@ -110,6 +80,18 @@ typedef struct {
     uint8_t *MessageBody;
     uint8_t Checksum;
 } STK500V2_CommandTypeDef;
+
+typedef struct __packed {
+    uint8_t CommandID;
+    uint8_t TimeoutMS;                  // Command time-out (in ms)
+    uint8_t StabDelay;                  // Delay (in ms) used for pin stabilization
+    uint8_t CmdExecutionDelay;          // Delay (in ms) in connection with the EnterProgMode command execution 
+    uint8_t SyncLoops;                  // Number of synchronization loop
+    uint8_t ByteDelay;                  // Delay (in ms) between each byte in the EnterProgMode command.
+    uint8_t PollValue;                  // Poll value: 0x53 for AVR, 0x69 for AT89xx 
+    uint8_t PollIndex;                  // Start address, received byte: 0 = no polling, 3 = AVR, 4 = AT89xx 
+    uint8_t Commands[4];                // Command bytes to be transmit
+} STK500V2_EnterProgModeBodyTypeDef;
 
 typedef struct {
     uint8_t ParamID;

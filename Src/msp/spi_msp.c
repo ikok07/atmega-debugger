@@ -10,8 +10,5 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi) {
     __HAL_RCC_SPI1_CLK_ENABLE();
 
     // GPIO configuration is done in spi.c because of frequent changes
-
-    HAL_NVIC_SetPriority(SPI1_IRQn, NVIC_PRIORITY_SPI1, 0);
-    HAL_NVIC_EnableIRQ(SPI1_IRQn);
   }
 }

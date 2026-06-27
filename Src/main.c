@@ -3,6 +3,7 @@
 #include "spi.h"
 #include "stm32f401xc.h"
 #include "stm32f4xx_hal.h"
+#include "stm32f4xx_hal_spi.h"
 #include "usb.h"
 #include "usbd_cdc_if.h"
 #include "usbd_def.h"
