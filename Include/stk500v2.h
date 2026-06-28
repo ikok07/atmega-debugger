@@ -94,6 +94,14 @@ typedef struct __packed {
 } STK500V2_EnterProgModeBodyTypeDef;
 
 typedef struct {
+    uint8_t CommandID;
+    uint8_t NumTx;                      // Number of bytes to transmit
+    uint8_t NumRx;                      // Number of bytes to receive
+    uint8_t RxStartAddr;                // Start address of returned data. Specifies on what transmitted byte the response is to be stored and returned. 
+    uint8_t *TxData;                    // The data  be transmitted. The size is specified by NumTx
+} STK500V2_CmdSPIMultiBodyTypeDef;
+
+typedef struct {
     uint8_t ParamID;
     uint8_t Value;
 } STK500V2_ParamPairTypeDef;

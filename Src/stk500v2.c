@@ -16,6 +16,8 @@
 /* ------ Command handlers ------ */
 static uint8_t enter_prog_mode(STK500V2_CommandTypeDef *Stk500Command);
 static void leave_prog_mode(STK500V2_CommandTypeDef *Stk500Command);
+static uint8_t spi_multi(STK500V2_CommandTypeDef *Stk500Command,
+                         uint8_t *RxData, uint8_t *RxLen);
 
 /* ------ Utilities ------ */
 static USB_CommandStatusTypeDef
@@ -81,6 +83,13 @@ STK500V2_HandleCmd(STK500V2_CommandTypeDef *Stk500Command) {
   } else if (cmd_id == CMD_LEAVE_PROGMODE_ISP) {
     leave_prog_mode(Stk500Command);
     status = send_response(Stk500Command, STATUS_CMD_OK, NULL, 0);
+  } else if (cmd_id == CMD_SPI_MULTI) {
+    uint8_t rx_data[255];
+    uint8_t rx_len = 0;
+    uint8_t rc = spi_multi(Stk500Command, rx_data, &rx_len);
+    status =
+        send_response(Stk500Command, rc > 0 ? STATUS_CMD_FAILED : STATUS_CMD_OK,
+                      rx_data, rx_len);
   }
 
   return status;
@@ -154,9 +163,6 @@ uint8_t enter_prog_mode(STK500V2_CommandTypeDef *Stk500Command) {
 
   // Stabilization delay
   HAL_Delay(body.StabDelay);
-
-  // Pull down RESET to activate programming mode
-  HAL_GPIO_WritePin(GPIO_PORT_AVR_RESET, GPIO_PIN_AVR_RESET, GPIO_PIN_RESET);
   HAL_Delay(body.CmdExecutionDelay);
 
   // Send commands
@@ -170,7 +176,8 @@ uint8_t enter_prog_mode(STK500V2_CommandTypeDef *Stk500Command) {
       SPI_DisableIO();
       return hal_err == HAL_TIMEOUT ? 2 : 1;
     };
-    if (rx_buf[body.PollIndex] == body.PollValue) {
+    // PollIndex is 1-based
+    if (rx_buf[body.PollIndex - 1] == body.PollValue) {
       success = 1;
       break;
     }
@@ -326,7 +333,7 @@ void avr_enable_reset() {
       .Speed = GPIO_SPEED_FREQ_LOW,
   };
   HAL_GPIO_Init(GPIO_PORT_AVR_RESET, &gpio_conf);
-  HAL_GPIO_WritePin(GPIO_PORT_AVR_RESET, GPIO_PIN_AVR_RESET, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIO_PORT_AVR_RESET, GPIO_PIN_AVR_RESET, GPIO_PIN_RESET);
 }
 
 void avr_disable_reset() {
@@ -338,4 +345,37 @@ void avr_disable_reset() {
   };
   // Reset into input mode pull-up
   HAL_GPIO_Init(GPIO_PORT_AVR_RESET, &gpio_conf);
+}
+
+uint8_t spi_multi(STK500V2_CommandTypeDef *Stk500Command, uint8_t *RxData,
+                  uint8_t *RxLen) {
+  STK500V2_CmdSPIMultiBodyTypeDef body;
+  body.CommandID = Stk500Command->MessageBody[0];
+  body.NumTx = Stk500Command->MessageBody[1];
+  body.NumRx = Stk500Command->MessageBody[2];
+  body.RxStartAddr = Stk500Command->MessageBody[3];
+  body.TxData = &(Stk500Command->MessageBody[4]);
+
+  uint8_t rx_data[255];
+
+  // Clear RxData buffer
+  memset(RxData, 0, 255);
+
+  HAL_StatusTypeDef hal_err;
+  if ((hal_err = HAL_SPI_TransmitReceive(&gAppState.hspi1, body.TxData, rx_data,
+                                         body.NumTx, 100)) != HAL_OK) {
+    return 1;
+  }
+
+  if (body.NumRx > 0) {
+    uint16_t end = (uint16_t)body.RxStartAddr + (uint16_t)body.NumRx;
+    if (end > body.NumTx)
+      // Received bytes count should never exceed tx bytes count
+      return 1;
+    memcpy(RxData, rx_data + body.RxStartAddr, body.NumRx);
+  }
+
+  *RxLen = body.NumRx;
+
+  return 0;
 }

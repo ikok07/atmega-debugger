@@ -122,12 +122,3 @@ void SPI_DisableIO() {
   gpio_conf.Pin = GPIO_PIN_SPI_SCK;
   HAL_GPIO_Init(GPIO_PORT_SPI_SCK, &gpio_conf);
 }
-
-HAL_StatusTypeDef SPI_Transmit(uint8_t *Buf, size_t Len, uint32_t TimeoutMs) {
-  HAL_StatusTypeDef hal_err;
-  if ((hal_err = HAL_SPI_Transmit(&gAppState.hspi1, Buf, Len, TimeoutMs)) !=
-      HAL_OK) {
-    return hal_err;
-  };
-  return hal_err;
-}

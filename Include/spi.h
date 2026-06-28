@@ -15,7 +15,4 @@ HAL_StatusTypeDef SPI_SetFrequency(uint32_t FrequencyHz);
 void SPI_EnableIO();
 void SPI_DisableIO();
 
-HAL_StatusTypeDef SPI_Transmit(uint8_t *Buf, size_t Len, uint32_t Timeout);
-// HAL_StatusTypeDef SPI_Receive();
-
 #endif /* INCLUDE_SPI */
