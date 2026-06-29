@@ -114,6 +114,7 @@ typedef struct {
     uint8_t TimedDelayPageMode;
     uint8_t ValuePollingPageMode;
     uint8_t RdyBsyPollingPageMode;
+    uint8_t WritePage;
 } STK500V2_CmdProgramFlashModeTypeDef;
 typedef struct {
     uint8_t CommandID;

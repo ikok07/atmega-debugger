@@ -43,8 +43,8 @@ send_response(STK500V2_CommandTypeDef *Stk500Command, uint8_t Status,
 static uint8_t poll_rdy_bsy(uint16_t TimeoutMs);
 
 // TODO: Research eeprom support which has 2 poll values
-static uint8_t poll_value(uint8_t ReadCommand, uint8_t PollValue,
-                          uint16_t TimeoutMs);
+static uint8_t poll_value(uint8_t ReadCommand, uint16_t Address,
+                          uint8_t PollValue, uint16_t TimeoutMs);
 
 static uint8_t send_load_ext_addr_instr();
 
@@ -345,6 +345,7 @@ uint8_t program_flash(STK500V2_CommandTypeDef *Stk500Command) {
       .TimedDelayPageMode = (Stk500Command->MessageBody[3] & (1 << 4)) > 0,
       .ValuePollingPageMode = (Stk500Command->MessageBody[3] & (1 << 5)) > 0,
       .RdyBsyPollingPageMode = (Stk500Command->MessageBody[3] & (1 << 6)) > 0,
+      .WritePage = (Stk500Command->MessageBody[3] & (1 << 7)) > 0,
   };
 
   body.Delay = Stk500Command->MessageBody[4];
@@ -367,35 +368,33 @@ uint8_t program_flash(STK500V2_CommandTypeDef *Stk500Command) {
   }
 
   HAL_StatusTypeDef hal_err;
-  if (body.Mode.PageModeEnabled) {
-    // Page mode
-  } else {
-    // Word mode
-    for (uint16_t i = 0; i < body.NumBytes; i += 2) {
-      uint8_t data_low = body.Data[i];
-      uint8_t data_high = body.Data[i + 1];
+  uint16_t page_addr = gStk500Address;
+  for (uint16_t i = 0; i < body.NumBytes; i += 2) {
+    uint8_t data_low = body.Data[i];
+    uint8_t data_high = body.Data[i + 1];
+    uint8_t data[4] = {
+        body.CmdLoadProgramMemory,    // Use the provided LOW byte command
+        (gStk500Address >> 8) & 0xFF, // HIGH Address byte
+        gStk500Address & 0xFF,        // LOW Address byte
+        data_low,
+    };
 
-      uint8_t data[4] = {
-          body.CmdWriteProgramMemory,   // Use the provided LOW byte command
-          (gStk500Address >> 8) & 0xFF, // LOW Address byte
-          gStk500Address & 0xFF,        // HIGH Address byte
-          data_low,
-      };
-      // Transmit LOW
-      if ((hal_err = HAL_SPI_Transmit(&gAppState.hspi1, data,
-                                      AVR_WORD_SIZE_BYTES, 100)) != HAL_OK) {
-        return 1;
-      }
+    // Transmit LOW
+    if ((hal_err = HAL_SPI_Transmit(&gAppState.hspi1, data, sizeof(data),
+                                    100)) != HAL_OK) {
+      return 1;
+    }
 
-      // Transmit HIGH
-      data[0] =
-          body.CmdWriteProgramMemory | 0x08; // Convert to HIGH byte command
-      data[1] = data_high;
-      if ((hal_err = HAL_SPI_Transmit(&gAppState.hspi1, data,
-                                      AVR_WORD_SIZE_BYTES, 100)) != HAL_OK) {
-        return 1;
-      }
+    // Transmit HIGH
+    data[0] = body.CmdLoadProgramMemory | 0x08; // Convert to HIGH byte command
+    data[3] = data_high;
+    if ((hal_err = HAL_SPI_Transmit(&gAppState.hspi1, data, sizeof(data),
+                                    100)) != HAL_OK) {
+      return 1;
+    }
 
+    if (!body.Mode.PageModeEnabled) {
+      // Delay after each word in "word mode"
       if (body.Mode.TimedDelayWordMode) {
         HAL_Delay(body.Delay);
       } else if (body.Mode.RdyBsyPollingWordMode) {
@@ -403,15 +402,43 @@ uint8_t program_flash(STK500V2_CommandTypeDef *Stk500Command) {
           return 2;
       } else if (body.Mode.ValuePollingWordMode) {
         // FLASH programming has only one poll value
-        if (poll_value(body.CmdReadProgramMemory, body.PollValues[0],
-                       body.Delay) != 0)
+        if (poll_value(body.CmdReadProgramMemory, gStk500Address,
+                       body.PollValues[0], body.Delay) != 0)
           return 2;
       }
+    }
 
-      // Increment word address
-      gStk500Address++;
+    // Increment word address
+    gStk500Address++;
+  }
+
+  if (body.Mode.PageModeEnabled && body.Mode.WritePage) {
+    // Commit data to FLASH after writing all data to RAM
+    uint8_t data[] = {
+        body.CmdWriteProgramMemory,
+        (page_addr >> 8) & 0xFF, // HIGH Address byte
+        page_addr & 0xFF,        // LOW Address byte
+        0x00,
+    };
+    if ((hal_err = HAL_SPI_Transmit(&gAppState.hspi1, data, sizeof(data),
+                                    100)) != HAL_OK) {
+      return 1;
+    }
+
+    if (body.Mode.TimedDelayPageMode) {
+      HAL_Delay(body.Delay);
+    } else if (body.Mode.RdyBsyPollingPageMode) {
+      if (poll_rdy_bsy(body.Delay) != 0)
+        return 2;
+    } else if (body.Mode.ValuePollingPageMode) {
+      // FLASH programming has only one poll value
+      if (poll_value(body.CmdReadProgramMemory, page_addr, body.PollValues[0],
+                     body.Delay) != 0)
+        return 2;
     }
   }
+
+  return 0;
 }
 
 uint8_t spi_multi(STK500V2_CommandTypeDef *Stk500Command, uint8_t *RxData,
@@ -502,12 +529,13 @@ uint8_t poll_rdy_bsy(uint16_t TimeoutMs) {
   return 1;
 }
 
-uint8_t poll_value(uint8_t ReadCommand, uint8_t PollValue, uint16_t TimeoutMs) {
+uint8_t poll_value(uint8_t ReadCommand, uint16_t Address, uint8_t PollValue,
+                   uint16_t TimeoutMs) {
   HAL_StatusTypeDef hal_err;
   uint8_t data[] = {
       ReadCommand,
-      (gStk500Address >> 8) & 0xFF,
-      gStk500Address & 0xFF,
+      (Address >> 8) & 0xFF,
+      Address & 0xFF,
       0x00, // Add dummy byte on which the poll value will be received
   };
 
